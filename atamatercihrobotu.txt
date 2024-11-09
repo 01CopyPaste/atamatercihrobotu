@@ -1,0 +1,83 @@
+function AtamaYapKontenjanli() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet1 = ss.getSheetByName("atama1");
+  const sheet2 = ss.getSheetByName("atama2");
+
+  if (!sheet1 || !sheet2) {
+    SpreadsheetApp.getUi().alert("Bir veya daha fazla sayfa bulunamadı.");
+    return;
+  }
+
+  const lastRow1 = sheet1.getLastRow();
+  const lastRow2 = sheet2.getLastRow();
+  
+  // Sadece tahmini atanacağı okul ve tercih sırası sütunlarını temizleyin
+  sheet1.getRange(2, 4, lastRow1 - 1, 1).clearContent();  // D sütunu
+  sheet1.getRange(2, 5, lastRow1 - 1, 1).clearContent();  // E sütunu
+  sheet2.getRange(2, 5, lastRow2 - 1, 1).clearContent();  // Kontenjan kalanları temizle
+
+  const okulKontenjan = {};
+  const okulListesi = sheet2.getRange("C2:C" + lastRow2).getValues();
+  const kontenjanListesi = sheet2.getRange("D2:D" + lastRow2).getValues();
+
+  for (let i = 0; i < okulListesi.length; i++) {
+    const okulAdi = okulListesi[i][0];
+    const kontenjan = kontenjanListesi[i][0];
+    if (!okulAdi || kontenjan === "" || isNaN(kontenjan)) {
+      Logger.log(`Eksik veri: ${okulAdi}, Satır ${i + 2}`);
+      continue;
+    }
+    okulKontenjan[okulAdi] = kontenjan;
+  }
+
+  const adaylarAralik = sheet1.getRange("B2:B" + lastRow1).getValues();
+  const tercihlerAraligi = sheet1.getRange("F2:AS" + lastRow1).getValues(); // 1-40 tercihler F-AS aralığında
+  const muhtemelAtama = [];
+  const tercihSirasi = [];
+  const doluOkullar = new Set();
+
+  for (let i = 0; i < adaylarAralik.length; i++) {
+    let atandi = false;
+    const tercihSeti = new Set(); // Aynı satırdaki okulları takip etmek için set oluştur
+    
+    for (let j = 0; j < 40; j++) {
+      const okul = tercihlerAraligi[i][j];
+      
+      if (okul) {
+        // Eğer okul daha önce tercih edilmişse, bu tercihi geç
+        if (tercihSeti.has(okul)) continue;
+        
+        // Okul, set'e eklenir ve tekrar edilmez
+        tercihSeti.add(okul);
+
+        if (okulKontenjan[okul] > 0 && !doluOkullar.has(okul)) {
+          muhtemelAtama.push([okul]);
+          tercihSirasi.push([j + 1]);
+          okulKontenjan[okul] -= 1;
+          if (okulKontenjan[okul] === 0) doluOkullar.add(okul);
+          atandi = true;
+          break;
+        }
+      }
+    }
+    if (!atandi) {
+      muhtemelAtama.push([""]);
+      tercihSirasi.push([""]);
+    }
+  }
+
+  if (muhtemelAtama.length === tercihSirasi.length) {
+    sheet1.getRange(2, 4, muhtemelAtama.length, 1).setValues(muhtemelAtama);  // Tahmini atanan okulları D sütununa yaz
+    sheet1.getRange(2, 5, tercihSirasi.length, 1).setValues(tercihSirasi);  // Tercih sırasını E sütununa yaz
+  } else {
+    Logger.log("Muhtemel atama ve tercih sırası uzunlukları uyumsuz.");
+  }
+
+  const remainingQuotas = okulListesi.map((row) => {
+    const okulAdi = row[0];
+    const remaining = okulKontenjan[okulAdi] !== undefined ? okulKontenjan[okulAdi] : "";
+    return [remaining];
+  });
+
+  sheet2.getRange(2, 5, remainingQuotas.length, 1).setValues(remainingQuotas); // Kalan kontenjanları sheet2'deki E sütununa yaz
+}
